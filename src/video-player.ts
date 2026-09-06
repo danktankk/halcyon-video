@@ -107,6 +107,11 @@ export interface VideoPlayerOptions {
    *  lets out onto the couch, leaves it off. Natural end-of-video and fatal
    *  errors always close directly. */
   confirmExit?: boolean;
+  /** Called when a hidden launch has stayed hidden longer than the play
+   *  flourish can plausibly run. The owner does the whole reveal (pausing the
+   *  scene and the ambient TVs, then calling reveal()); without it the player
+   *  reveals itself, which is still better than a film nobody can exit. */
+  requestReveal?: () => void;
   /** Fired when the user backs out or the video ends. `endedNaturally` is true
    *  only when playback ran to the end of the stream, which is what lets a
    *  series roll into its next episode instead of returning to the store. */
@@ -189,6 +194,10 @@ export class VideoPlayer {
   private burnedInSubtitleIndex: number | null = null;
   private nativeLoadedMetadataListener: (() => void) | null = null;
   private isHidden = false;
+  /** Fail-safe for a reveal that never comes (see armRevealWatchdog). */
+  private revealWatchdog = 0;
+  /** How long a hidden launch may stay hidden before it reveals itself. */
+  private static readonly REVEAL_TIMEOUT_MS = 15_000;
   private preHiddenVolume = 1.0;
   // Remote/keyboard focus: which zone owns the highlight (the scrub bar is
   // the default — left/right seek there, Android-TV style), plus the index
@@ -404,10 +413,39 @@ export class VideoPlayer {
     this.nudgeControls();
     this.startProgressReporting();
     this.startStallWatchdog();
+    this.armRevealWatchdog();
+  }
+
+  /**
+   * The flourish is a few seconds of tape-into-VCR animation. If it has not
+   * handed us a reveal well after that, something upstream of us dropped the
+   * handshake — a Remote Play instance whose animation frames never ran to the
+   * end is the case this was written for — and staying hidden means a viewer
+   * watching a film that ignores every button. Reveal anyway.
+   */
+  private armRevealWatchdog(): void {
+    this.clearRevealWatchdog();
+    if (!this.isHidden) return;
+    this.revealWatchdog = window.setTimeout(() => {
+      this.revealWatchdog = 0;
+      if (!this._isOpen || !this.isHidden) return;
+      this.log('[Player] reveal never arrived — revealing anyway so the film can be controlled');
+      const owner = this.opts?.requestReveal;
+      if (owner) owner();
+      else this.reveal();
+    }, VideoPlayer.REVEAL_TIMEOUT_MS);
+  }
+
+  private clearRevealWatchdog(): void {
+    if (this.revealWatchdog) {
+      clearTimeout(this.revealWatchdog);
+      this.revealWatchdog = 0;
+    }
   }
 
   reveal(): void {
     if (!this._isOpen || !this.isHidden) return;
+    this.clearRevealWatchdog();
     this.isHidden = false;
 
     // Restore normal volume
@@ -535,6 +573,12 @@ export class VideoPlayer {
    *  (video ended, fatal error, programmatic close) calls close() directly. */
   requestClose(): void {
     if (!this._isOpen) return;
+    // Still hidden: the confirm card would go up inside a display:none overlay,
+    // so the viewer would see nothing change and press Back again forever.
+    if (this.isHidden) {
+      this.close();
+      return;
+    }
     if (this.opts?.confirmExit && !this.isExitConfirmOpen) {
       this.showExitConfirm();
       return;
@@ -560,6 +604,7 @@ export class VideoPlayer {
 
   close(): void {
     if (!this._isOpen) return;
+    this.clearRevealWatchdog();
     this.exitConfirmEl.hidden = true;
     const ticks = this.currentPositionTicks();
     const onClose = this.opts?.onClose;

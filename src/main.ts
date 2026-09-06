@@ -3730,6 +3730,7 @@ export async function launchVideoPlayback(movie: Movie, overrideItemId?: string,
     // dismiss the controls doesn't dump the viewer at the storefront. Couch
     // playback just drops back onto the couch, so no confirm is needed.
     confirmExit: !fromCouch,
+    requestReveal: () => revealVideoPlayback(),
     buildStream: (sel) => transcodeStreamUrlSync(jellyfinUrl, token, playbackId, { ...sel, sourceVideoCodec, mediaSourceId }, titleKind),
     log: (msg) => logToConsole(msg, 'video'),
     onProgress: (positionTicks, isPaused) => {
