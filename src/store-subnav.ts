@@ -261,6 +261,32 @@ function buildLibraryRow(scene: StoreScene): SubNavItem[] {
       genres.push(shelfItem(t.label, 'genre', libIdx, t.unitIdxInLibrary, t.side, t.col, t.x, t.y, t.z));
     }
   }
+  // VIDEO GAMES is a DEPARTMENT, not a display.
+  //
+  // Its gondolas are slotted floor fixtures, so Row 2 lists them like any
+  // other fixture -- and Row 2 is a row a viewer has to know exists. The
+  // index opens on Row 1 and that is where somebody looking for the games
+  // goes looking. One ticket here, on the first gondola, next to the
+  // libraries: the four numbered ones stay on Row 2 for anyone who wants a
+  // particular gondola.
+  const gameIdx = scene.slottedFixtures.findIndex(
+    (f) => f.placement.kind === 'game-section' && f.getSlots().length > 0);
+  if (scene.gameMovies.length > 0 && gameIdx >= 0) {
+    const g = scene.slottedFixtures[gameIdx];
+    const heights = g.shelfHeights;
+    out.push({
+      label: 'VIDEO GAMES',
+      kind: 'fixture',
+      libraryIdx: -1, unitIdxInLibrary: -1, side: 'front', col: 0,
+      fixtureIdx: gameIdx,
+      x: g.placement.position.x,
+      y: Math.max(FIXTURE_CURSOR_MIN_Y,
+        (heights.length > 0 ? heights[heights.length - 1] : 3.4) + FIXTURE_CURSOR_LIFT),
+      z: g.placement.position.z,
+      yaw: g.placement.yaw,
+      lookY: heights.length > 0 ? (heights[0] + heights[heights.length - 1]) / 2 + 0.4 : 3.0,
+    });
+  }
   // The back wall is a first-class browse destination (same as the overview's
   // NEW RELEASES cursor); it enters through the library-select confirm path.
   if (scene.shelvingUnits.length > 0) {
