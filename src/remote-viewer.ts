@@ -88,7 +88,15 @@ function toggleHint(): void {
 // key to learn from. This says what the only always-available gesture does
 // right now, which during playback is the difference between watching a film
 // and being trapped in one.
+// A film is the one thing on this screen that is not ours, and a caption
+// parked over somebody's movie for two hours is vandalism. So the chip is
+// permanent in the store and an OSD during playback: up for a moment when the
+// film starts, up again whenever a key is pressed (the same instinct that
+// wakes any player's controls), and otherwise gone.
+const CHIP_START_MS = 6000;
+const CHIP_NUDGE_MS = 4000;
 let tvChipEl: HTMLDivElement | null = null;
+let chipTimer = 0;
 
 function installTvChip(): void {
   const el = document.createElement('div');
@@ -99,17 +107,38 @@ function installTvChip(): void {
     'color:rgba(255,232,168,0.62)', 'background:rgba(6,8,15,0.42)',
     'border-radius:999px', 'padding:9px 16px', 'pointer-events:none',
     'user-select:none', 'text-shadow:0 1px 3px rgba(0,0,0,0.8)',
+    'transition:opacity 420ms ease',
   ].join(';');
   document.body.appendChild(el);
   tvChipEl = el;
   updateTvChip();
 }
 
+function isPlaying(): boolean {
+  return document.body.classList.contains('playing');
+}
+
+/** Text for the state we are in, and — in the store — permanent visibility. */
 function updateTvChip(): void {
   if (!tvChipEl) return;
-  tvChipEl.textContent = document.body.classList.contains('playing')
+  tvChipEl.textContent = isPlaying()
     ? 'HOLD BACK \u2014 EXIT TO STORE'
     : 'HOLD BACK \u2014 HELP';
+  if (!isPlaying()) {
+    if (chipTimer) { clearTimeout(chipTimer); chipTimer = 0; }
+    tvChipEl.style.opacity = '1';
+  }
+}
+
+/** Playback only: show it, then get out of the way. */
+function nudgeTvChip(ms: number): void {
+  if (!tvChipEl || !isPlaying()) return;
+  tvChipEl.style.opacity = '1';
+  if (chipTimer) clearTimeout(chipTimer);
+  chipTimer = window.setTimeout(() => {
+    chipTimer = 0;
+    if (tvChipEl && isPlaying()) tvChipEl.style.opacity = '0';
+  }, ms);
 }
 
 /** One whole press of a store key, synthesized by the viewer itself. */
@@ -139,6 +168,8 @@ function setPlaybackLegend(on: boolean): void {
   const was = document.body.classList.contains('playing');
   document.body.classList.toggle('playing', on);
   updateTvChip();
+  // A film starting: say how to leave it, then clear the picture.
+  if (on && !was) nudgeTvChip(CHIP_START_MS);
   // A film starting is the one moment the picture changes under the viewer
   // with no chrome at all to explain it — say which keys still work, briefly.
   if (on && !was) showHint(6000);
@@ -601,6 +632,10 @@ const PREVENT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ',
 
 window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser chords alone
+  // Any key during playback wakes the exit hint, the way a key wakes a
+  // player's controls. In the store the chip is already up and this is a
+  // no-op.
+  if (!e.repeat) nudgeTvChip(CHIP_NUDGE_MS);
   if (tvControls) {
     const m = tvControls.mapKey(e);
     if (m === 'hint') { e.preventDefault(); toggleHint(); return; } // viewer-local
