@@ -62,6 +62,7 @@ import {
   enterEndcapCursor, enterFixtureCursor, enterShelfCursor,
 } from './browse-cursor';
 import { OVERVIEW_POS } from './scene-shared';
+import { isRemoteInstance } from './remote-play';
 import { FIELD_Z_FRONT, FRONT_GLASS_Z } from './store-layout';
 import { isMomAndPop } from './store-format';
 import { aimOverviewAt } from './store-camera';
@@ -228,7 +229,11 @@ function buildLibraryRow(scene: StoreScene): SubNavItem[] {
   // all, leaving the power menu as the sole route. Offered only when a host has
   // wired the handler; the harness and the asset viewer have not, and a dead
   // row entry is worse than no entry.
-  if (scene.onEnterFlatMode) {
+  // ...and never on a remote instance, where switching to 2.5D kills the
+  // stream the viewer is watching and leaves no screen to switch back from
+  // (see flatModeAllowedHere). A ticket that refuses when pressed is worse
+  // than no ticket.
+  if (scene.onEnterFlatMode && !isRemoteInstance()) {
     out.push({
       label: '2D MODE',
       kind: 'flat-mode',

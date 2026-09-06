@@ -109,7 +109,7 @@ import { initSharedPlace } from './shared-place-ui';
 import { refreshHoldHints, setHoldCheckoutProgress, setHoldDismissProgress } from './hold-hints';
 import {
   setupRemotePlay, isRemoteInstance, isRemotelyDriven, reportRemoteFatal,
-  clearRemoteFatal, remoteViewerCount, notifyStoreRebuilt,
+  clearRemoteFatal, remoteViewerCount, notifyStoreRebuilt, flatModeAllowedHere,
 } from './remote-play';
 import { enableFpsMeter, FPS_METER_KEY } from './fps-meter';
 import { VideoPlayer } from './video-player';
@@ -2577,6 +2577,7 @@ let isSwitchingMode = false;
  */
 async function switchRenderMode(target: 'flat' | '3d') {
   if (isSwitchingMode || getSetting<string>('bb_render_mode') === target) return;
+  if (target === 'flat' && !flatModeAllowedHere()) return; // no canvas to stream
   isSwitchingMode = true;
   try {
     closePowerMenu(); // dismiss the manager-terminal/power overlay if it's up

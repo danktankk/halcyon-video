@@ -173,6 +173,30 @@ export function isRemotelyDriven(): boolean {
   return viewers.size > 0 && Date.now() - lastRemoteInputAt < REMOTE_DRIVE_MS;
 }
 
+/**
+ * Whether this page may switch itself into the flat 2.5D shelf.
+ *
+ * A spawned private instance may not. 2.5D is DOM, not a canvas, so there is
+ * nothing for captureStream() to capture: the viewer's picture stops on its
+ * last 3D frame and never resumes, and reportRemoteFatal's advice ("switch it
+ * back on the machine running the store") names a machine that does not exist
+ * — the store is a headless Chromium in a container with no screen and no
+ * keyboard. The only way back out was a CDP session from the host. So the
+ * switch is refused here instead, at the one funnel every entry point goes
+ * through (jump index, settings drawer, power menu, the flat menu itself).
+ *
+ * A shared kiosk keeps the old behaviour: somebody is standing in front of it
+ * and can switch back, and viewers there already get the fatal notice.
+ */
+export function flatModeAllowedHere(): boolean {
+  if (!instanceId) return true;
+  reportRemoteFatal('2.5D mode has no 3D view to stream, and this store is a '
+    + 'remote instance with no screen of its own to switch back from. '
+    + 'Staying in the 3D store.');
+  window.setTimeout(clearRemoteFatal, 6000);
+  return false;
+}
+
 /** Live-apply entry for the settings toggle. Safe to call redundantly. */
 export function setRemotePlayEnabled(on: boolean): void {
   // A spawned private instance exists ONLY to host — its viewer is already
