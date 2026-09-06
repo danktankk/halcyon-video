@@ -57,9 +57,44 @@ class MainActivity : AppCompatActivity() {
     /** Guards one BACK press so the long press and the release do not both fire. */
     private var backHandled = false
 
+    /** The same guard for the Netflix button, which is also tap-or-hold. */
+    private var spareHandled = false
+
+    /** Set once a BACK press has already opened setup, so a hold that keeps
+     *  going does not stack a second copy of that Activity. */
+    private var backSetupSent = false
+
     private companion object {
-        /** Hold BACK this long to reach the address screen. */
+        /** Hold BACK this long for the store's own hold action. */
         const val LONG_PRESS_MS = 700L
+
+        /**
+         * Keep holding BACK this long to reach the address screen. The short
+         * hold belongs to the store now -- help in the aisles, out of a film
+         * in the player -- because it is the only gesture left: the Netflix
+         * button never reaches us on a physical press (the system launches
+         * Netflix, which paints its own "Something went wrong" offline card
+         * over the top of us) whatever the key layout says, and MENU never
+         * reaches an app at all. Setup is the rare one, so it pays the
+         * longer hold.
+         */
+        const val SETUP_PRESS_MS = 3000L
+
+        /**
+         * The synthetic key a BACK hold becomes. Only the page knows whether
+         * a film is on the wire, so the page decides what the gesture means:
+         * src/remote-tv.ts routes it to the controls legend in the store and
+         * to a hard stop during playback.
+         */
+        const val HOLD_BACK_KEY = "TvHoldBack"
+
+        /**
+         * The Netflix button. `/system/usr/keylayout/Vendor_0955_Product_7217.kl`
+         * on the box itself — "NVIDIA Shield Remote (2019 edition)" — ends with
+         * `# The netflix button is mapped to button_12`, so this is what it
+         * arrives as. Every other button on that remote already has a job.
+         */
+        const val SPARE_KEY = KeyEvent.KEYCODE_BUTTON_12
 
         /**
          * The keys a WebView will not hand to the page, mapped to the names
@@ -89,6 +124,16 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_BUTTON_A to ("Enter" to "Enter"),
             // MENU is the legend toggle; remote-tv.ts maps ContextMenu to it.
             KeyEvent.KEYCODE_MENU to ("ContextMenu" to "ContextMenu"),
+            // A television's own remote, driving us over CEC, has no MENU key
+            // but does have these two. remote-tv.ts's HINT_KEYS takes 'Info'.
+            KeyEvent.KEYCODE_INFO to ("Info" to "Info"),
+            KeyEvent.KEYCODE_GUIDE to ("Info" to "Info"),
+            // Whatever else a given box calls its menu button. Cheap: none of
+            // these has another job here, and which one a particular remote
+            // actually emits is not knowable without that remote in hand.
+            KeyEvent.KEYCODE_TV_CONTENTS_MENU to ("Info" to "Info"),
+            KeyEvent.KEYCODE_SETTINGS to ("Info" to "Info"),
+            KeyEvent.KEYCODE_HELP to ("Info" to "Info"),
         )
     }
 
@@ -152,6 +197,9 @@ class MainActivity : AppCompatActivity() {
      * that could swallow BACK forever should not also own the only way out.)
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == SPARE_KEY && pageLoaded && errorCard.visibility != View.VISIBLE) {
+            return handleSpareKey(event)
+        }
         if (event.keyCode != KeyEvent.KEYCODE_BACK) {
             val mapped = FORWARDED_KEYS[event.keyCode]
             // Only once the store is actually on screen: while the error card
@@ -173,11 +221,23 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount == 0) {
                     backHandled = false
+                    backSetupSent = false
                     // Asks the system to mark the repeat that crosses the
                     // long-press timeout with FLAG_LONG_PRESS.
                     event.startTracking()
                 } else if (!backHandled && isLongPress(event)) {
+                    // Consumed here, so the release must not also send Escape.
                     backHandled = true
+                    if (pageLoaded && errorCard.visibility != View.VISIBLE) {
+                        sendKeyPressToPage(HOLD_BACK_KEY, HOLD_BACK_KEY)
+                    } else {
+                        // Nothing to hold a gesture for: the page never loaded.
+                        backSetupSent = true
+                        openSetup()
+                    }
+                } else if (!backSetupSent &&
+                    event.eventTime - event.downTime >= SETUP_PRESS_MS) {
+                    backSetupSent = true
                     openSetup()
                 }
             }
@@ -215,6 +275,42 @@ class MainActivity : AppCompatActivity() {
      * a keyboard's — no bridge object, no page-side API to keep in step.
      */
     private fun sendEscapeToPage() = sendKeyPressToPage("Escape", "Escape")
+
+    /**
+     * The Netflix button, spent on the store instead.
+     *
+     * The remote's own key layout calls it BUTTON_12 — an ordinary key, not a
+     * system shortcut — so an Activity in the foreground can take it. It is the
+     * only button on this remote with nothing to do here, and the 3D store has
+     * two things a d-pad cannot otherwise reach:
+     *
+     *   tap  -> `f`, walk the aisles instead of gliding shelf to shelf
+     *   hold -> `/`, the search overlay
+     *
+     * Tap-or-hold is read the same way BACK is, and for the same reason: a
+     * television remote has no modifier keys, so the second action has to be
+     * the long press.
+     */
+    private fun handleSpareKey(event: KeyEvent): Boolean {
+        when (event.action) {
+            KeyEvent.ACTION_DOWN -> {
+                if (event.repeatCount == 0) {
+                    spareHandled = false
+                    event.startTracking()
+                } else if (!spareHandled && isLongPress(event)) {
+                    spareHandled = true
+                    sendKeyPressToPage("ContextMenu", "ContextMenu")
+                }
+            }
+            KeyEvent.ACTION_UP -> {
+                if (!spareHandled) {
+                    spareHandled = true
+                    sendKeyPressToPage("f", "KeyF")
+                }
+            }
+        }
+        return true
+    }
 
     /** A press and its release, for keys we synthesize whole (BACK). */
     private fun sendKeyPressToPage(key: String, code: String) {

@@ -81,10 +81,64 @@ function toggleHint(): void {
   else showHint(HINT_RECALL_MS);
 }
 
+// The one line of chrome a ten-foot viewer keeps.
+//
+// The legend fades, and a viewer who arrives mid-film -- or who looked away
+// for the nine seconds it was up -- has no chrome, no pointer and no labelled
+// key to learn from. This says what the only always-available gesture does
+// right now, which during playback is the difference between watching a film
+// and being trapped in one.
+let tvChipEl: HTMLDivElement | null = null;
+
+function installTvChip(): void {
+  const el = document.createElement('div');
+  el.id = 'tvchip';
+  el.style.cssText = [
+    'position:absolute', 'right:16px', 'bottom:14px', 'z-index:40',
+    'font:600 15px/1 system-ui,sans-serif', 'letter-spacing:0.10em',
+    'color:rgba(255,232,168,0.62)', 'background:rgba(6,8,15,0.42)',
+    'border-radius:999px', 'padding:9px 16px', 'pointer-events:none',
+    'user-select:none', 'text-shadow:0 1px 3px rgba(0,0,0,0.8)',
+  ].join(';');
+  document.body.appendChild(el);
+  tvChipEl = el;
+  updateTvChip();
+}
+
+function updateTvChip(): void {
+  if (!tvChipEl) return;
+  tvChipEl.textContent = document.body.classList.contains('playing')
+    ? 'HOLD BACK \u2014 EXIT TO STORE'
+    : 'HOLD BACK \u2014 HELP';
+}
+
+/** One whole press of a store key, synthesized by the viewer itself. */
+function sendStorePress(key: string, code: string): void {
+  unmute();
+  sendInput({ t: 'key', et: 'down', key, code, repeat: false });
+  sendInput({ t: 'key', et: 'up', key, code });
+}
+
+/**
+ * The held-BACK gesture, resolved against what is on screen.
+ *
+ * In a film, 'p' is the store's hard stop (main.ts onPower -> close()), which
+ * closes the player outright rather than raising the STOP WATCHING card -- a
+ * card that needs LEFT then OK, and that is invisible entirely while playback
+ * is still hidden behind the tape-into-VCR flourish. That combination is what
+ * made films inescapable. In the store the same gesture is the legend, which
+ * a TV remote otherwise has no key to recall.
+ */
+function holdBackAction(): void {
+  if (document.body.classList.contains('playing')) sendStorePress('p', 'KeyP');
+  else toggleHint();
+}
+
 /** The host says a film is (or is no longer) what these frames are. */
 function setPlaybackLegend(on: boolean): void {
   const was = document.body.classList.contains('playing');
   document.body.classList.toggle('playing', on);
+  updateTvChip();
   // A film starting is the one moment the picture changes under the viewer
   // with no chrome at all to explain it — say which keys still work, briefly.
   if (on && !was) showHint(6000);
@@ -208,11 +262,11 @@ const hasTurn = () => iceServers.some((s) => String(s.urls).includes('turn:'));
 
 /**
  * Ask the server for a private store of our own. The id persists in
- * sessionStorage so a refresh reconnects to the same still-warm instance
+ * localStorage so a refresh OR an app relaunch reconnects to the same still-warm instance
  * instead of paying another boot. Null = busy/unavailable (caller retries).
  */
 async function requestInstance(): Promise<string | null> {
-  const reuse = sessionStorage.getItem('bb_remote_instance') ?? undefined;
+  const reuse = localStorage.getItem('bb_remote_instance') ?? undefined;
   const fast = new URLSearchParams(location.search).get('fast') === '1';
   try {
     // Generous timeout: a fresh spawn answers only once headless Chrome is up.
@@ -237,7 +291,7 @@ async function requestInstance(): Promise<string | null> {
     }
     if (!r.ok) return null;
     const j = await r.json();
-    sessionStorage.setItem('bb_remote_instance', String(j.id));
+    localStorage.setItem('bb_remote_instance', String(j.id));
     return String(j.id);
   } catch {
     return null;
@@ -454,7 +508,7 @@ async function main() {
     updateModeBtn(st);
 
     if (privateMode && st.instances) {
-      setStatus(sessionStorage.getItem('bb_remote_instance')
+      setStatus(localStorage.getItem('bb_remote_instance')
         ? 'Reconnecting to your store…'
         : 'Opening your own private store… (~30s)');
       const id = await requestInstance();
@@ -530,6 +584,8 @@ const tvControls = isTvViewer()
     })
   : null;
 
+if (tvControls) installTvChip();
+
 // A controller paired to THIS device (a TV especially — see remote-gamepad.ts)
 // forwards its raw pad state; the host rebuilds a virtual pad from it so every
 // native controller action works remotely, including analog walk movement/look.
@@ -548,6 +604,7 @@ window.addEventListener('keydown', (e) => {
   if (tvControls) {
     const m = tvControls.mapKey(e);
     if (m === 'hint') { e.preventDefault(); toggleHint(); return; } // viewer-local
+    if (m === 'holdback') { e.preventDefault(); holdBackAction(); return; } // ditto
     if (m) {
       e.preventDefault();
       unmute();
@@ -567,7 +624,7 @@ window.addEventListener('keyup', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (tvControls) {
     const m = tvControls.mapKey(e);
-    if (m === 'hint') return;
+    if (m === 'hint' || m === 'holdback') return;
     if (m) {
       sendInput({ t: 'key', et: 'up', key: m.key, code: m.code });
       return;
@@ -720,7 +777,8 @@ if (!tvControls && isTouchPrimary()) {
       map: (key: string): string | null => {
         if (!tvControls) return null;
         const m = tvControls.mapKey(new KeyboardEvent('keydown', { key }));
-        return m === 'hint' ? 'hint' : (m ? m.key : null);
+        if (m === 'hint' || m === 'holdback') return m;
+        return m ? m.key : null;
       },
     };
   },

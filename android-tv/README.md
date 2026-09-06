@@ -31,9 +31,28 @@ Then:
 | BACK | back out of wherever you are |
 | Play/Pause | select, or pause the film |
 | Rewind / Fast-forward | seek during playback |
-| MENU | show the controls legend again |
-| **hold BACK** | back to the address screen |
+| MENU | show the controls legend again (on the remotes that have one) |
+| **hold BACK** | in the store: the controls legend. In a film: stop it and come back to the store |
+| **hold BACK, 3s** | the address screen |
 | HOME | leave the app (the system's key, always works) |
+
+**Why so much lives on BACK.** It is the only key this app reliably owns. A
+Shield's Netflix button reads as an ordinary `BUTTON_12` in
+`/system/usr/keylayout/Vendor_0955_Product_7217.kl`, and injecting that keycode
+with `adb` does reach us — but a real press of it never does: the system claims
+the button upstream and launches Netflix, which paints its own "Something went
+wrong / check your WiFi" card over the top of the store. `KEYCODE_MENU` never
+reaches an app at all. So BACK carries three actions, told apart by how long
+you hold it, and the store advertises the middle one in the corner of the
+screen rather than expecting anyone to read this table.
+
+The held-BACK action is decided by the *viewer*, not by the app: only the page
+knows whether a film is on the wire. In a film it sends the store's hard stop
+rather than its back action, because the back action raises a STOP WATCHING
+card that wants a LEFT and an OK — and that card is invisible entirely during
+the first seconds of playback, while the picture is still behind the
+tape-into-VCR animation. A viewer who met that combination could not leave the
+film at all.
 
 The address box is generous about what you type: `192.168.1.20`,
 `192.168.1.20:1420`, `http://halcyon.lan:1420/`, or the whole

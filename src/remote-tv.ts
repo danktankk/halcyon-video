@@ -74,14 +74,28 @@ const KEY_MAP: Record<string, { key: string; code: string }> = {
 // Keys that are the LEGEND's, not the host's: the remote's menu/context key.
 const HINT_KEYS = new Set(['ContextMenu', 'Menu', 'Info']);
 
+/**
+ * A held BACK, synthesized by our own Android TV shell (android-tv/, see
+ * MainActivity.HOLD_BACK_KEY). It is not a real key on any remote: it is the
+ * only spare GESTURE the app has, because the Shield's Netflix button never
+ * reaches us on a physical press (the system launches Netflix over us) and
+ * MENU never reaches an app at all.
+ *
+ * What it means depends on what is on screen, which only the viewer knows:
+ * the controls legend in the store, a hard stop during playback. The viewer
+ * resolves it -- see remote-viewer.ts.
+ */
+export const TV_HOLD_BACK_KEY = 'TvHoldBack';
+
 export interface TvControls {
   /**
    * Translate one keyboard event. Returns the store key to forward instead,
    * 'hint' when the key is the legend toggle (viewer-local, keydown only),
-   * or null when the event is not a TV-remote special and the normal
-   * keyboard path should handle it.
+   * 'holdback' for the shell's held-BACK gesture (also viewer-local: the
+   * viewer decides what it means), or null when the event is not a TV-remote
+   * special and the normal keyboard path should handle it.
    */
-  mapKey(e: KeyboardEvent): { key: string; code: string } | 'hint' | null;
+  mapKey(e: KeyboardEvent): { key: string; code: string } | 'hint' | 'holdback' | null;
 }
 
 export function installTvControls(opts: TvControlOpts): TvControls {
@@ -133,7 +147,8 @@ export function installTvControls(opts: TvControlOpts): TvControls {
   }
 
   return {
-    mapKey(e: KeyboardEvent): { key: string; code: string } | 'hint' | null {
+    mapKey(e: KeyboardEvent): { key: string; code: string } | 'hint' | 'holdback' | null {
+      if (e.key === TV_HOLD_BACK_KEY) return 'holdback';
       if (HINT_KEYS.has(e.key)) return 'hint';
       return KEY_MAP[e.key] ?? null;
     },
