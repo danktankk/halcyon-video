@@ -36,6 +36,17 @@ const IDLE_KILL_MS = Number(process.env.REMOTE_PLAY_IDLE_MS) || 180_000;
 const BEAT_TIMEOUT_MS = 60_000; // crashed page: heartbeats stop
 const BOOT_GRACE_MS = 90_000;   // full library boot can be slow — don't reap it
 
+// What the headless store actually renders at, and therefore what every
+// viewer's panel is handed. 1600x900 was cheap but arrived on a 1080p
+// television as a 20% upscale of every letter on every spine -- and on a 4K
+// set as a 2.4x one. The send budget was never the problem (12 Mbps, 60 fps,
+// contentHint 'detail' -- see tuneVideoSender in src/remote-play.ts), the
+// render size was. 1080p lands pixel-for-pixel on the panel this is built
+// for. Overridable because it is the one knob that trades GPU per instance
+// against legibility, and REMOTE_PLAY_MAX_INSTANCES multiplies it.
+const STREAM_WIDTH = Number(process.env.REMOTE_PLAY_WIDTH) || 1920;
+const STREAM_HEIGHT = Number(process.env.REMOTE_PLAY_HEIGHT) || 1080;
+
 export function remotePlayPlugin() {
   // ── signaling mailbox ─────────────────────────────────────────────────────
   const boxes = new Map(); // peer -> { msgs, waiter, lastSeen }
@@ -327,7 +338,7 @@ export function remotePlayPlugin() {
           ...(process.env.HALCYON_CONTAINER ? ["--disable-dev-shm-usage"] : []),
           marker(),
         ],
-        defaultViewport: { width: 1600, height: 900 },
+        defaultViewport: { width: STREAM_WIDTH, height: STREAM_HEIGHT },
       });
       rec.browser = browser;
       browser.on("disconnected", () => {
